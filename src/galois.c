@@ -39,15 +39,6 @@ FAKE_INIT(galois)
 typedef uint64_t t_v_tables[128][2][2];
 
 /**
- * To ensure that the V table is aligned to a 32-byte memory boundary,
- * we allocate a larger piece of memory and carve the V table from there.
- */
-typedef struct {
-    uint8_t buffer[sizeof(t_v_tables)+ALIGNMENT];
-    int offset;
-} t_exp_key;
-
-/**
  * Create a V table. V[i] is the value H*x^i (i=0..127).
  * \param h         The 16 byte GHASH key
  * \param tables    A pointer to an allocated V table
@@ -132,20 +123,17 @@ EXPORT_SYM int ghash(
         const uint8_t block_data[],
         size_t len,
         const uint8_t y_in[16],
-        const t_exp_key *exp_key
+        const t_v_tables *v_tables
         )
 {
     unsigned i;
-    const t_v_tables *v_tables;
 
-    if (NULL==y_out || NULL==block_data || NULL==y_in || NULL==exp_key)
+    if (NULL==y_out || NULL==block_data || NULL==y_in || NULL==v_tables)
         return ERR_NULL;
 
     if (len % 16)
         return ERR_NOT_ENOUGH_DATA;
      
-    v_tables = (const t_v_tables*)(exp_key->buffer + exp_key->offset);
-
     memcpy(y_out, y_in, 16);
     for (i=0; i<len; i+=16) {
         unsigned j;
@@ -163,24 +151,21 @@ EXPORT_SYM int ghash(
 /**
  * Expand the AES key into a Python (byte) string object.
  */ 
-EXPORT_SYM int ghash_expand(const uint8_t h[16], t_exp_key **ghash_tables)
+EXPORT_SYM int ghash_expand(const uint8_t h[16], t_v_tables **ghash_tables)
 {
-    t_exp_key *exp_key;
-
     if (NULL==h || NULL==ghash_tables)
         return ERR_NULL;
 
-    *ghash_tables = exp_key = calloc(1, sizeof(t_exp_key));
-    if (NULL == exp_key)
+    *ghash_tables = align_alloc(sizeof(t_v_tables), ALIGNMENT);
+    if (NULL == *ghash_tables)
         return ERR_MEMORY;
     
-    exp_key->offset = ALIGNMENT - (int)((uintptr_t)exp_key->buffer & (ALIGNMENT-1));
-    make_v_tables(h, (t_v_tables*)(exp_key->buffer + exp_key->offset));
+    make_v_tables(h, *ghash_tables);
     
     return 0;
 }
 
-EXPORT_SYM int ghash_destroy(t_exp_key *ghash_tables)
+EXPORT_SYM int ghash_destroy(t_v_tables *ghash_tables)
 {
     free(ghash_tables);
     return 0;
